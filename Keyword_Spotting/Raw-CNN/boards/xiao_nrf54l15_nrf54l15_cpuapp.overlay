@@ -1,0 +1,68 @@
+/ {
+    chosen {
+        /* Tell Zephyr this is the main screen */
+        zephyr,display = &oled0;
+    };
+
+    zephyr,user {
+        io-channels = <&adc 0>, <&adc 1>, <&adc 2>, <&adc 3>,
+                      <&adc 4>, <&adc 5>, <&adc 6>, <&adc 7>;
+    };
+
+    /* Your extra LED definitions (optional but harmless to keep) */
+    o_ports {
+        compatible = "gpio-leds";
+        p104_d0: p104_d0 {
+            gpios = <&xiao_d 0 GPIO_ACTIVE_HIGH>;
+        };
+    };
+
+    i_port {
+        compatible = "gpio-keys";
+        p105_d1: p105_d1 {
+            gpios = <&xiao_d 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+            zephyr,code = <INPUT_KEY_ENTER>;
+        };
+    };
+
+    aliases {
+        p104d0 = &p104_d0;
+        p105d1 = &p105_d1;
+    };
+};
+
+/* --- 1. ENABLE I2C DISPLAY --- */
+/* Using the board alias handles the pins automatically! */
+&xiao_i2c {
+    clock-frequency = <400000>;
+    status = "okay";
+    zephyr,concat-buf-size = <1025>;
+    zephyr,flash-buf-max-size = <1025>;
+    /* The SSD1306 Driver Definition */
+    oled0: ssd1306@3c {
+        compatible = "solomon,ssd1306fb";
+        reg = <0x3c>; /* Address 0x3C */
+        width = <128>;
+        height = <64>;
+        segment-offset = <0>;
+        page-offset = <0>;
+        display-offset = <0>;
+        multiplex-ratio = <63>;
+        segment-remap;
+        com-invdir;
+        prechargep = <0x22>;
+    };
+};
+
+/* --- 2. AI & AUDIO SETTINGS --- */
+&wdt31 {
+    status = "okay";
+};
+
+dmic_dev: &pdm20 {
+    status = "okay";
+};
+
+&uart20 {
+    current-speed = <115200>;
+};
