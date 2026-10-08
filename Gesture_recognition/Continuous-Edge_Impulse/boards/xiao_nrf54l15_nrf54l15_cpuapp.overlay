@@ -1,0 +1,21 @@
+/ {
+    aliases {
+        imu-int = &lsm6dso;
+    };
+    zephyr,user {
+        io-channels = <&adc 0>, <&adc 1>, <&adc 2>, <&adc 3>,
+            <&adc 4>, <&adc 5>, <&adc 6>, <&adc 7>;
+    };
+};
+
+&wdt31 {
+    status = "okay";
+};
+
+&uart20 {
+    current-speed = <115200>;
+};
+
+&lsm6dso {
+    irq-gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
+};

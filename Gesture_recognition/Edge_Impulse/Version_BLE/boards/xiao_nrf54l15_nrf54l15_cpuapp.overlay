@@ -1,0 +1,40 @@
+/ {
+    chosen {
+        zephyr,bt-hci   = &bt_hci_sdc;
+        zephyr,display = &oled0;
+    };
+	zephyr,user {
+		io-channels = <&adc 0>, <&adc 1>, <&adc 2>, <&adc 3>,
+			<&adc 4>, <&adc 5>, <&adc 6>, <&adc 7>;
+	};
+};
+ 
+&xiao_i2c {
+    clock-frequency = <400000>;
+    status = "okay";
+    zephyr,concat-buf-size = <1025>;
+    zephyr,flash-buf-max-size = <1025>;
+    /* The SSD1306 Driver Definition */
+    oled0: ssd1306@3c {
+        compatible = "solomon,ssd1306fb";
+        reg = <0x3c>; /* Address 0x3C */
+        width = <128>;
+        height = <64>;
+        segment-offset = <0>;
+        page-offset = <0>;
+        display-offset = <0>;
+        multiplex-ratio = <63>;
+        segment-remap;
+        com-invdir;
+        prechargep = <0x22>;
+    };
+};
+&wdt31 {
+	status = "okay";
+};
+
+
+&uart20 {
+    current-speed = <115200>;
+	//current-speed = <460800>;
+};
