@@ -102,4 +102,4 @@ Multi-speaker datasets, multi-keyword classification, shorter gesture windows, f
 
 ## Report
 
-The full project report is available on request. Contact me at [your-email@example.com].
+The full project report is available on request.
