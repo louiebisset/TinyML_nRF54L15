@@ -12,7 +12,7 @@ This is the code for my University of Bristol final-year project, *Optimisation 
 |---|---|
 | [Keyword spotting](Keyword_Spotting) | Detects the spoken word "Hello" from the onboard PDM microphone (1 second of 16 kHz audio) |
 | [Gesture recognition](Gesture_recognition) | Classifies five gestures (lift, rotate, shake, double tap, flick) from the onboard 6-axis IMU (3 seconds at 50 Hz) |
-| [BLE scanner](BLE_scanner) | Scans for the BLE advertisements the models broadcast |
+| [BLE scanner](BLE_scanner) | Scans for the BLE advertisements broadcast by the board and reads the classification results from them |
 
 Each project can run triggered by a button press, or continuously (keyword spotting listens with a sliding window; gesture recognition wakes on motion using the IMU's wake-up detection). The result is broadcast as a short non-connectable BLE advertisement.
 
@@ -81,12 +81,12 @@ Continuous keyword spotting draws 1.67 mA (about 30 days). Battery life was calc
 
 Built with nRF Connect SDK v3.1.1 in VS Code.
 
-TensorFlow Lite Micro in NCS v3.1.1 was not fully compatible with the XIAO nRF54L15, so three source files (`flatbuffer_conversions.cc`, `error_reporter.cc`, `flatbuffer_conversions_bridge.cc`) were added to the module, `CMakeLists.txt` was pointed at the modified module, and C++ was enabled in `prj.conf`. See [setup notes](docs/tflm_setup.md) for details.
+TensorFlow Lite Micro in NCS v3.1.1 was not fully compatible with the XIAO nRF54L15, so three source files (`flatbuffer_conversions.cc`, `error_reporter.cc`, `flatbuffer_conversions_bridge.cc`) were added to the module, `CMakeLists.txt` was pointed at the modified module, and C++ was enabled in `prj.conf`.
 
 ```bash
 git clone https://github.com/louiebisset/TinyML_nRF54L15.git
-cd TinyML_nRF54L15/[project folder]
-west build -b [board target]
+cd TinyML_nRF54L15/Keyword_Spotting   # or Gesture_recognition
+west build -b xiao_nrf54l15/nrf54l15/cpuapp
 west flash
 ```
 
@@ -102,4 +102,4 @@ Multi-speaker datasets, multi-keyword classification, shorter gesture windows, f
 
 ## Report
 
-[Full project report](docs/report.pdf)
+The full project report is available on request. Contact me at [your-email@example.com].
