@@ -10,6 +10,7 @@
 #include <zephyr/sys_clock.h>
 #include <arm_math.h>
 #include <arm_const_structs.h>
+#include <algorithm>
 
 #include "tensorflow/lite/micro/micro_mutable_op_resolver.h"
 #include "tensorflow/lite/micro/micro_interpreter.h"
@@ -17,7 +18,7 @@
 #include "model_data.h"
 #include "dsp_constants.h"
 
-// ── 1. CONFIGURATION ──────────────────────────────────────────────────────────
+// ── 1. CONFIGURATION 
 
 #define SAMPLE_RATE      16000
 #define TOTAL_SECONDS    1.5f
@@ -35,7 +36,7 @@
 #define TIME_STEPS       (INF_SAMPLES / HOP_LENGTH)   // 31
 #define N_BINS           (FFT_SIZE / 2 + 1)           // 257
 
-// ── 2. HARDWARE NODES ─────────────────────────────────────────────────────────
+// ── 2. HARDWARE NODES 
 
 static const struct device *const dmic_dev =
     DEVICE_DT_GET(DT_NODELABEL(dmic_dev));
@@ -43,7 +44,7 @@ static const struct gpio_dt_spec button =
     GPIO_DT_SPEC_GET(DT_ALIAS(sw0),  gpios);
 //static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
-// ── 3. AUDIO GLOBALS ──────────────────────────────────────────────────────────
+// ── 3. AUDIO GLOBALS 
 
 static int16_t rx_buffer[TOTAL_SAMPLES];
 K_MEM_SLAB_DEFINE_STATIC(mem_slab, BLOCK_SIZE, 8, 4);
@@ -51,7 +52,7 @@ K_MEM_SLAB_DEFINE_STATIC(mem_slab, BLOCK_SIZE, 8, 4);
 static K_SEM_DEFINE(button_sem, 0, 1);
 static struct gpio_callback button_cb_data;
 
-// ── 4. DSP BUFFERS ────────────────────────────────────────────────────────────
+// ── 4. DSP BUFFERS 
 // All static — no VLAs, no stack pressure.
 
 static arm_rfft_fast_instance_f32 rfft_inst;
@@ -66,7 +67,7 @@ static float32_t mfcc_buf[N_MFCC];     // DCT-II output
 // Precomputed cumulative offsets into mel_filters_packed[]
 static uint32_t filter_coef_offset[N_MFCC];
 
-// ── 5. AI BUFFERS ─────────────────────────────────────────────────────────────
+// ── 5. AI BUFFERS 
 
 constexpr int kArenaSize = 10 * 1024;
 alignas(16) static uint8_t tensor_arena[kArenaSize];
@@ -75,7 +76,7 @@ static tflite::MicroInterpreter *interpreter = nullptr;
 static TfLiteTensor *input_tensor            = nullptr;
 static TfLiteTensor *output_tensor           = nullptr;
 
-// ── 6. BUTTON ISR ─────────────────────────────────────────────────────────────
+// ── 6. BUTTON ISR 
 
 static void button_isr(const struct device *dev,
                         struct gpio_callback *cb,
@@ -130,7 +131,7 @@ static void compute_mfcc_for_frame(const float32_t *audio_frame,
     arm_mat_vec_mult_f32(&dct_mat, log_mel_buf, mfcc_out);
 }
 
-// ── 8. AI SETUP ───────────────────────────────────────────────────────────────
+// ── 8. AI SETUP 
 
 static void setup_ai(void)
 {
@@ -193,12 +194,7 @@ static void setup_ai(void)
            (unsigned)((used * 100) / kArenaSize));
 }
 
-// ── 9. AUDIO RECORDING ────────────────────────────────────────────────────────
-//
-// LED behaviour (file-1 style):
-//   • LED OFF during the first DISCARD_SAMPLES (mic warm-up / PDM settle time)
-//   • LED ON  once warm-up is done → user should speak now
-//   • LED OFF again after recording completes
+// ── 9. AUDIO RECORDING 
 
 static void record_audio(void)
 {
@@ -230,10 +226,7 @@ static void record_audio(void)
         printk("ERROR: DMIC configuration failed!\n");
         return;
     }
-
-    //gpio_pin_set_dt(&led0, 1);  // LED OFF — warming up
     printk("Warming up mic...\n");
-
     dmic_trigger(dmic_dev, DMIC_TRIGGER_START);
 
     while (bytes_recorded < sizeof(rx_buffer)) {
@@ -265,12 +258,13 @@ static void record_audio(void)
     printk("Recording complete.\n");
 }
 
-// ── 10. INFERENCE WITH SEPARATE TIMING ───────────────────────────────────────
+// ── 10. INFERENCE WITH SEPARATE TIMING 
 //
 // Timing breakdown:
 //   dsp_us   – time spent extracting all MFCC frames (compute_mfcc_for_frame
 //               for every TIME_STEPS hop, including normalisation & quantisation)
 //   invoke_us – time spent inside interpreter->Invoke() only
+
 
 static void run_inference(void)
 {
@@ -279,69 +273,100 @@ static void run_inference(void)
         return;
     }
 
-    int8_t    *input_ptr = tflite::GetTensorData<int8_t>(input_tensor);
-    float32_t  mfcc_sum  = 0.0f;
+    if (input_tensor == nullptr || output_tensor == nullptr) {
+        printk("ERROR: Input or output tensor is not initialised.\n");
+        return;
+    }
+
+    int8_t *input_ptr = tflite::GetTensorData<int8_t>(input_tensor);
+    float32_t mfcc_sum = 0.0f;
 
     printk("Extracting MFCC features (%d frames x %d coefficients)...\n",
            TIME_STEPS, N_MFCC);
 
-    // ── DSP timing start ─────────────────────────────────────────────────────
+    // Start DSP timing
     uint32_t dsp_start = k_cycle_get_32();
 
     for (int t = 0; t < TIME_STEPS; t++) {
         const int base = DISCARD_SAMPLES + t * HOP_LENGTH;
 
-        // Build normalised float frame from int16 PCM
+        // Convert PCM audio samples to normalised floating-point values
         float32_t audio_in[FFT_SIZE];
+
         for (int i = 0; i < FFT_SIZE; i++) {
-            audio_in[i] = (float32_t)rx_buffer[base + i] / 32768.0f;
+            audio_in[i] =
+                static_cast<float32_t>(rx_buffer[base + i]) / 32768.0f;
         }
 
-        // Run the six-step MFCC pipeline
+        // Calculate MFCC features for this frame
         compute_mfcc_for_frame(audio_in, mfcc_buf);
 
-        // Normalise and quantise into the int8 input tensor
-        // Tensor layout: row-major [N_MFCC × TIME_STEPS], index = f * TIME_STEPS + t
+        // Normalise, quantise and store features in the input tensor
+        // Tensor layout: [N_MFCC, TIME_STEPS]
+        // Index: f * TIME_STEPS + t
         for (int f = 0; f < N_MFCC; f++) {
-            int   idx        = f * TIME_STEPS + t;
-            float normalised = (mfcc_buf[f] - PYTHON_MEAN) / PYTHON_STD;
-            float q          = (normalised / input_tensor->params.scale)
-                               + input_tensor->params.zero_point;
-            input_ptr[idx]   = (int8_t)std::max(-128.0f, std::min(127.0f, q));
-            mfcc_sum        += mfcc_buf[f];
+            const int idx = f * TIME_STEPS + t;
+
+            const float normalised =
+                (mfcc_buf[f] - PYTHON_MEAN) / PYTHON_STD;
+
+            const float q =
+                (normalised / input_tensor->params.scale) +
+                input_tensor->params.zero_point;
+
+            const float q_clamped =
+                std::max(-128.0f, std::min(127.0f, q));
+
+            input_ptr[idx] = static_cast<int8_t>(q_clamped);
+
+            mfcc_sum += mfcc_buf[f];
         }
     }
 
-    uint32_t dsp_us = k_cyc_to_us_near32(k_cycle_get_32() - dsp_start);
-    // ── DSP timing end ───────────────────────────────────────────────────────
+    // End DSP timing
+    const uint32_t dsp_us =
+        k_cyc_to_us_near32(k_cycle_get_32() - dsp_start);
 
-    printk("  [DBG] mean raw MFCC: %d (x1000) — expect variation between speech/silence\n",
-           (int)(mfcc_sum / (N_MFCC * TIME_STEPS) * 1000.0f));
+    printk("  [DBG] Mean raw MFCC: %d (x1000)\n",
+           static_cast<int>(
+               (mfcc_sum / (N_MFCC * TIME_STEPS)) * 1000.0f));
 
-    // ── Invoke timing start ──────────────────────────────────────────────────
-    uint32_t invoke_start = k_cycle_get_32();
+    // Start model inference timing
+    const uint32_t invoke_start = k_cycle_get_32();
 
-    TfLiteStatus invoke_status = interpreter->Invoke();
+    const TfLiteStatus invoke_status = interpreter->Invoke();
 
-    uint32_t invoke_us = k_cyc_to_us_near32(k_cycle_get_32() - invoke_start);
-    // ── Invoke timing end ────────────────────────────────────────────────────
+    // End model inference timing
+    const uint32_t invoke_us =
+        k_cyc_to_us_near32(k_cycle_get_32() - invoke_start);
 
-     if (invoke_status == kTfLiteOk) {
-        int8_t raw = output_tensor->data.int8[0];
-        float val  = (raw - output_tensor->params.zero_point) * output_tensor->params.scale;
-        
+    if (invoke_status == kTfLiteOk) {
+        const int8_t raw = output_tensor->data.int8[0];
+
+        const float val =
+            (static_cast<int>(raw) - output_tensor->params.zero_point) *
+            output_tensor->params.scale;
+
         printk("\n>>> INFERENCE METRICS <<<\n");
-        printk("Execution Time : %u us (%u.%03u ms)\n", 
-                diff_us, diff_us / 1000, diff_us % 1000);
+        printk("DSP Time       : %u us (%u.%03u ms)\n",
+               dsp_us, dsp_us / 1000, dsp_us % 1000);
+        printk("Invoke Time    : %u us (%u.%03u ms)\n", invoke_us, invoke_us / 1000, invoke_us % 1000);
+        printk("Total Time     : %u us (%u.%03u ms)\n", dsp_us + invoke_us,
+               (dsp_us + invoke_us) / 1000,
+               (dsp_us + invoke_us) % 1000);
         printk("Result         : %s\n", (val > 0.8f) ? "DETECTED" : "NOISE");
-        printk("Confidence     : %d%%\n", (int)(val * 100));
-        printk("Arena Used     : %d bytes\n", (int)interpreter->arena_used_bytes());
+        printk("Confidence     : %d%%\n",
+               static_cast<int>(val * 100.0f));
+        printk("Arena Used     : %u bytes\n",
+               static_cast<unsigned int>(
+                   interpreter->arena_used_bytes()));
         printk("--------------------------\n");
     } else {
-        printk("Inference Invoke Failed!\n");
+        printk("Inference Invoke Failed! Status: %d\n",
+               static_cast<int>(invoke_status));
     }
-
-// ── 11. MAIN ──────────────────────────────────────────────────────────────────
+}
+// ── 11. MAIN 
 
 int main(void)
 {
@@ -356,7 +381,6 @@ int main(void)
     }
 
     // Configure GPIO
-    //gpio_pin_configure_dt(&led0,   GPIO_OUTPUT_INACTIVE);
     gpio_pin_configure_dt(&button, GPIO_INPUT | GPIO_PULL_UP);
     gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
     gpio_init_callback(&button_cb_data, button_isr, BIT(button.pin));
