@@ -102,4 +102,5 @@ Multi-speaker datasets, multi-keyword classification, shorter gesture windows, f
 
 ## Report
 
-The full project report is available on request.
+The full project report is available in Dissertation_Report.docx
+
